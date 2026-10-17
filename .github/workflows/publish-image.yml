@@ -1,0 +1,132 @@
+name: Publish container image with Cloud Build
+
+on:
+  push:
+    branches: ["**"]
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ghcr-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    # Publish the default branch, version tags, or a manually selected revision.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      github.ref == format('refs/heads/{0}', github.event.repository.default_branch) ||
+      startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      GCP_PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+      GCP_REGION: ${{ vars.GCP_REGION || 'us-central1' }}
+      GCP_WIF_PROVIDER: ${{ vars.GCP_WIF_PROVIDER }}
+      GCP_SUBMITTER_SERVICE_ACCOUNT: ${{ vars.GCP_SUBMITTER_SERVICE_ACCOUNT }}
+      GCP_BUILD_SERVICE_ACCOUNT: ${{ vars.GCP_BUILD_SERVICE_ACCOUNT }}
+      GCP_SOURCE_BUCKET: ${{ vars.GCP_SOURCE_BUCKET }}
+      GHCR_USERNAME: ${{ vars.GHCR_USERNAME }}
+      GHCR_TOKEN_SECRET: ${{ vars.GHCR_TOKEN_SECRET || 'ghcr-token' }}
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+
+      - name: Check Google Cloud configuration
+        run: |
+          for variable in GCP_PROJECT_ID GCP_WIF_PROVIDER GCP_SUBMITTER_SERVICE_ACCOUNT GCP_BUILD_SERVICE_ACCOUNT GCP_SOURCE_BUCKET GHCR_USERNAME; do
+            if [ -z "${!variable}" ]; then
+              echo "::error::Set the GitHub repository variable ${variable}. See docs/cloud-build.md."
+              exit 1
+            fi
+          done
+
+      - name: Set image name
+        id: image
+        env:
+          REPOSITORY: ${{ github.repository }}
+        run: echo "name=ghcr.io/${REPOSITORY,,}" >> "$GITHUB_OUTPUT"
+
+      - name: Generate image tags and labels
+        id: meta
+        uses: docker/metadata-action@v6
+        with:
+          images: ${{ steps.image.outputs.name }}
+          flavor: latest=false
+          tags: |
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha,format=long
+          labels: |
+            org.opencontainers.image.title=One Progress
+            org.opencontainers.image.description=Personal progress dashboard with calendar and goal tracking
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+
+      - name: Prepare image metadata for Cloud Build
+        env:
+          BUILD_METADATA: ${{ steps.meta.outputs.json }}
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          metadata = json.loads(os.environ['BUILD_METADATA'])
+          tags = metadata['tags']
+          labels = [f'{key}={value}' for key, value in metadata['labels'].items()]
+          if not tags or any('\n' in value or '\r' in value for value in tags + labels):
+              raise ValueError('Invalid image metadata')
+          target = Path('.cloudbuild-meta')
+          target.mkdir(exist_ok=True)
+          (target / 'tags.txt').write_text('\n'.join(tags) + '\n')
+          (target / 'labels.txt').write_text('\n'.join(labels) + '\n')
+          PY
+
+      - name: Authenticate to Google Cloud
+        id: auth
+        uses: google-github-actions/auth@v3
+        with:
+          project_id: ${{ env.GCP_PROJECT_ID }}
+          workload_identity_provider: ${{ env.GCP_WIF_PROVIDER }}
+          service_account: ${{ env.GCP_SUBMITTER_SERVICE_ACCOUNT }}
+          token_format: access_token
+          access_token_lifetime: 3600s
+
+      - name: Set up Google Cloud CLI
+        uses: google-github-actions/setup-gcloud@v3
+
+      - name: Submit build and wait for publication
+        id: build
+        env:
+          # Use the one-hour service-account access token during the remote build.
+          CLOUDSDK_AUTH_ACCESS_TOKEN: ${{ steps.auth.outputs.access_token }}
+        run: |
+          build_id="$(gcloud builds submit . \
+            --project="$GCP_PROJECT_ID" \
+            --region="$GCP_REGION" \
+            --config=deploy/cloudbuild.yaml \
+            --ignore-file=.gcloudignore \
+            --gcs-source-staging-dir="gs://$GCP_SOURCE_BUCKET/source" \
+            --substitutions="_BUILD_SERVICE_ACCOUNT=$GCP_BUILD_SERVICE_ACCOUNT,_GHCR_USERNAME=$GHCR_USERNAME,_GHCR_TOKEN_SECRET=$GHCR_TOKEN_SECRET" \
+            --suppress-logs \
+            --format='value(id)')"
+          echo "id=$build_id" >> "$GITHUB_OUTPUT"
+
+      - name: Show client configuration
+        env:
+          IMAGE_REF: ${{ steps.image.outputs.name }}:sha-${{ github.sha }}
+          BUILD_ID: ${{ steps.build.outputs.id }}
+        run: |
+          printf 'Built and published by Google Cloud Build: `%s`.\n\nClient `.env`:\n\n```dotenv\nIMAGE=%s\n```\n\nThen run `docker compose pull` and `docker compose up -d`.\n' "$BUILD_ID" "$IMAGE_REF" >> "$GITHUB_STEP_SUMMARY"
