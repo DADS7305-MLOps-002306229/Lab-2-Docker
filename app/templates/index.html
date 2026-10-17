@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f5f5f7"><meta name="description" content="Track goals, schedules, and date ranges.">
+  <title>One Progress</title>
+  <script src="/static/theme.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/gsap@3.13.0/dist/gsap.min.js" async></script>
+  <script src="https://cdn.jsdelivr.net/npm/motion@11.11.13/dist/motion.js" async></script>
+  <link rel="stylesheet" href="/static/style.css">
+  <script src="/static/animation.js" defer></script><script src="/static/app.js" defer></script>
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="/" aria-label="One Progress home"><span class="brand-dots" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i></span><span class="brand-name">One Progress</span></a>
+    <div class="header-actions">
+      <button class="theme-toggle" id="theme-toggle" type="button" role="switch" aria-checked="false" aria-label="Dark mode">
+        <span class="theme-label">Dark</span><span class="theme-track" aria-hidden="true"><span></span></span>
+      </button>
+      <button class="primary" id="new-card">Add progress</button>
+    </div>
+  </header>
+  <main class="content">
+    <section class="page-heading"><h1>Progress</h1><time id="today-label"></time></section>
+    <div class="dashboard-layout">
+    <section class="pinned-panel" aria-labelledby="time-title">
+      <div class="section-heading"><h2 id="time-title">Pinned</h2><span class="section-note">Calendar</span></div>
+      <div class="calendar-grid" id="calendar-cards"></div>
+    </section>
+    <div class="goals-panel" role="region" aria-label="Your goals and archive" tabindex="0">
+    <section class="goals-section" aria-labelledby="goals-title">
+      <div class="section-heading"><h2 id="goals-title">Active <span id="card-count" class="count-pill">0</span></h2></div>
+      <div class="card-grid" id="cards" aria-live="polite"></div>
+      <div class="empty" id="empty" hidden><h3>No active progress</h3><p>Track a target or a date range.</p><button class="secondary" id="empty-create">Add progress</button></div>
+    </section>
+    <details class="archive" id="archive">
+      <summary><span>Archive <span id="archive-count" class="count-pill">0</span></span><span class="archive-hint">Completed goals <span class="archive-disclosure" aria-hidden="true"></span></span></summary>
+      <p class="archive-note">Completed progress. Edit a target or extend an end date to restore it.</p>
+      <div class="card-grid" id="archive-cards"></div>
+      <p id="archive-empty" class="archive-note">No completed progress yet.</p>
+    </details>
+    </div>
+    </div>
+  </main>
+  <dialog id="editor" aria-labelledby="editor-title"><form id="card-form">
+    <div class="dialog-heading"><div><h2 id="editor-title">Add progress</h2></div><button type="button" class="close-button" id="close-editor" aria-label="Close editor">Close</button></div>
+    <label>Title<input name="title" required maxlength="80" placeholder="e.g. Read 12 books"></label>
+    <label>Description <span class="optional">optional</span><textarea name="description" maxlength="240" rows="2" placeholder="Add a note (optional)"></textarea></label>
+    <label>Progress type<select name="progress_type"><option value="steps">Steps</option><option value="date">Date range</option></select></label>
+    <fieldset id="date-fields" hidden disabled>
+      <div class="form-row"><label>Start date<input name="start_date" type="date" required></label><label>End date<input name="end_date" type="date" required></label></div>
+      <p class="schedule-help">Updates daily. Starts at 0% on the start date and completes at the beginning of the end date (server time).</p>
+    </fieldset>
+    <fieldset id="step-fields">
+    <div class="form-row"><label>Goal<input name="target" type="number" min="1" max="1000000000" value="30" required></label><label>Current progress<input name="current" type="number" min="0" value="0" required></label><label>Unit<input name="unit" maxlength="24" value="steps" required></label></div>
+    <div class="form-row"><label>Update schedule<select name="mode"><option value="manual">Manual</option><option value="daily">Daily</option><option value="weekdays">Selected weekdays</option></select></label><label>Amount per update<input name="step" type="number" min="1" max="1000000000" value="1" required></label></div>
+    <fieldset id="weekdays" hidden><legend>Update on</legend><div class="day-picker"><label><input type="checkbox" value="0"><span>M</span></label><label><input type="checkbox" value="1"><span>T</span></label><label><input type="checkbox" value="2"><span>W</span></label><label><input type="checkbox" value="3"><span>T</span></label><label><input type="checkbox" value="4"><span>F</span></label><label><input type="checkbox" value="5"><span>S</span></label><label><input type="checkbox" value="6"><span>S</span></label></div></fieldset>
+    <p class="schedule-help" id="schedule-help">Use + and − to update progress.</p>
+    </fieldset>
+    <fieldset><legend>Color</legend><div class="color-picker" id="color-picker"></div></fieldset>
+    <p id="form-error" class="error" role="alert"></p>
+    <div class="dialog-footer"><button type="button" id="delete-card" class="danger" hidden>Delete card</button><div class="dialog-actions"><button type="button" class="secondary" id="cancel-editor">Cancel</button><button type="submit" class="primary" id="save-card">Add progress</button></div></div>
+  </form></dialog>
+  <dialog id="delete-dialog" aria-labelledby="delete-title"><h2 id="delete-title">Delete this progress card?</h2><p>Your card and its progress will be removed.</p><div class="dialog-actions"><button class="secondary" id="cancel-delete">Keep card</button><button class="danger-solid" id="confirm-delete">Delete card</button></div></dialog>
+  <div id="toast" class="toast" role="status"></div>
+</body>
+</html>
