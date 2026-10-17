@@ -7,4 +7,6 @@ RUN python -m pip install --no-cache-dir tzdata==2026.4 \
 WORKDIR /app
 COPY app/ ./app/
 
+EXPOSE 8000
+
 CMD ["python", "-m", "app.server", "--host", "0.0.0.0"]
