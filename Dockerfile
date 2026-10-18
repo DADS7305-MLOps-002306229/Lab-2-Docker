@@ -6,6 +6,7 @@ RUN python -m pip install --no-cache-dir tzdata==2026.4 \
 
 WORKDIR /app
 ENV PROGRESS_DB=/data/progress.sqlite3
+ENV PYTHONPATH=/app
 COPY app/ ./app/
 
 EXPOSE 8000
